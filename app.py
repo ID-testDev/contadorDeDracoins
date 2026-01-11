@@ -29,7 +29,7 @@ st.code(
 
 st.divider()
 
-nombre = st.text_input("Nombre de la dinámica", placeholder="Ej. Dracoins - Torneo de Enero")
+nombre = st.text_input("Nombre de la dinámica", placeholder="Ej. Dinámica Otaku")
 num_rondas = st.number_input("¿Cuántas rondas hubo?", min_value=1, max_value=100, value=1, step=1)
 
 PUNTOS_TOP4 = [30, 25, 20, 15]
