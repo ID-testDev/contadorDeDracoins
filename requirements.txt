@@ -1,0 +1,2 @@
+streamlit>=1.30
+regex>=2023.10.3
