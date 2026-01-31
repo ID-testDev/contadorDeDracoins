@@ -1,7 +1,7 @@
 # app.py
 import streamlit as st
 from collections import defaultdict, Counter
-import unicodedata  # ✅ NUEVO
+import unicodedata
 
 # Intentamos usar "regex" (mejor para emojis compuestos). Si no existe, caemos a un fallback.
 try:
@@ -37,26 +37,6 @@ PUNTOS_TOP4 = [30, 25, 20, 15]
 PUNTOS_OTROS = 10
 
 
-# ✅ NUEVO: limpia caracteres invisibles tipo Cf (word joiner / zero-width / BOM, etc.)
-def remove_format_chars(s: str) -> str:
-    if not s:
-        return s
-    return "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
-
-
-# ✅ NUEVO: detecta clusters que son "invisibles" (solo Cf / espacios)
-def is_invisible_cluster(g: str) -> bool:
-    if not g:
-        return True
-    for ch in g:
-        if ch.isspace():
-            continue
-        if unicodedata.category(ch) == "Cf":
-            continue
-        return False
-    return True
-
-
 def graphemes(s: str):
     """Devuelve clusters (mejor para emojis compuestos)."""
     if not s:
@@ -65,6 +45,27 @@ def graphemes(s: str):
         return re.findall(r"\X", s)
     # Fallback: por codepoint (puede partir algunos emojis compuestos)
     return list(s)
+
+
+def is_invisible_cluster(g: str) -> bool:
+    """
+    True solo si el cluster NO contiene ningún caracter visible.
+    Esto permite ignorar basura invisible (word joiner, etc.)
+    sin romper emojis compuestos que usan Cf (ZWJ/VS16).
+    """
+    if not g:
+        return True
+
+    for ch in g:
+        cat = unicodedata.category(ch)
+
+        # Si hay algo visible (letra, número, símbolo, puntuación) => NO es invisible
+        # (Los emojis suelen caer en categoría "S*")
+        if cat.startswith(("L", "N", "S", "P")):
+            return False
+
+    # Si solo trae control/format/separators (incluye Cf) => invisible
+    return True
 
 
 def parse_participants_from_line(line: str):
@@ -77,8 +78,7 @@ def parse_participants_from_line(line: str):
     if not line:
         return []
 
-    # ✅ NUEVO: elimina invisibles antes de parsear
-    s = remove_format_chars(line).strip()
+    s = line.strip()
 
     # Si trae "N." al inicio, recortamos a la derecha del punto
     if "." in s:
@@ -101,13 +101,14 @@ def parse_participants_from_line(line: str):
                 # Paréntesis sin cerrar: no tronamos, parseamos lo que quede como clusters
                 rest = s[i:].replace(" ", "")
                 for g in graphemes(rest):
-                    if not is_invisible_cluster(g):  # ✅ NUEVO
+                    if not is_invisible_cluster(g):
                         participants.append(g)
                 break
+
             inside = s[i + 1 : j].replace(" ", "").strip()
-            inside = remove_format_chars(inside)  # ✅ NUEVO
-            if inside:
+            if inside and not is_invisible_cluster(inside):
                 participants.append(inside)
+
             i = j + 1
             continue
 
@@ -115,13 +116,13 @@ def parse_participants_from_line(line: str):
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
             g = m.group(0)
-            # ✅ NUEVO: ignorar clusters invisibles
             if not is_invisible_cluster(g):
                 participants.append(g)
             i += len(g)
         else:
-            # ✅ NUEVO: ignorar Cf en fallback
-            if unicodedata.category(ch) != "Cf" and not ch.isspace():
+            # Fallback por codepoint: ignoramos chars invisibles (Cf/controles/espacios)
+            cat = unicodedata.category(ch)
+            if not ch.isspace() and not cat.startswith(("C", "Z")):
                 participants.append(ch)
             i += 1
 
@@ -134,8 +135,7 @@ def extract_round_number(first_line: str):
     """Extrae el número antes del punto: '7. ...' => 7; si no, None."""
     if not first_line:
         return None
-    # ✅ NUEVO: elimina invisibles antes del regex
-    s = remove_format_chars(first_line).strip()
+    s = first_line.strip()
     m = re.match(r"^\s*(\d+)\s*\.", s)
     if not m:
         return None
@@ -152,9 +152,6 @@ def normalize_lines(raw_text: str):
       - first_two: (line1, line2) (pueden ser "" si faltan)
     """
     raw = raw_text or ""
-    # ✅ NUEVO: limpia invisibles a nivel texto completo (por si están al inicio de línea)
-    raw = remove_format_chars(raw)
-
     lines_all = [ln.strip() for ln in raw.splitlines() if ln.strip() != ""]
     line1 = lines_all[0] if len(lines_all) >= 1 else ""
     line2 = lines_all[1] if len(lines_all) >= 2 else ""
