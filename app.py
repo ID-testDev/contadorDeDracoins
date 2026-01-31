@@ -1,6 +1,7 @@
 # app.py
 import streamlit as st
 from collections import defaultdict, Counter
+import unicodedata  # ✅ NUEVO
 
 # Intentamos usar "regex" (mejor para emojis compuestos). Si no existe, caemos a un fallback.
 try:
@@ -36,6 +37,26 @@ PUNTOS_TOP4 = [30, 25, 20, 15]
 PUNTOS_OTROS = 10
 
 
+# ✅ NUEVO: limpia caracteres invisibles tipo Cf (word joiner / zero-width / BOM, etc.)
+def remove_format_chars(s: str) -> str:
+    if not s:
+        return s
+    return "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
+
+
+# ✅ NUEVO: detecta clusters que son "invisibles" (solo Cf / espacios)
+def is_invisible_cluster(g: str) -> bool:
+    if not g:
+        return True
+    for ch in g:
+        if ch.isspace():
+            continue
+        if unicodedata.category(ch) == "Cf":
+            continue
+        return False
+    return True
+
+
 def graphemes(s: str):
     """Devuelve clusters (mejor para emojis compuestos)."""
     if not s:
@@ -56,7 +77,8 @@ def parse_participants_from_line(line: str):
     if not line:
         return []
 
-    s = line.strip()
+    # ✅ NUEVO: elimina invisibles antes de parsear
+    s = remove_format_chars(line).strip()
 
     # Si trae "N." al inicio, recortamos a la derecha del punto
     if "." in s:
@@ -78,9 +100,12 @@ def parse_participants_from_line(line: str):
             if j == -1:
                 # Paréntesis sin cerrar: no tronamos, parseamos lo que quede como clusters
                 rest = s[i:].replace(" ", "")
-                participants.extend([g for g in graphemes(rest) if not g.isspace()])
+                for g in graphemes(rest):
+                    if not is_invisible_cluster(g):  # ✅ NUEVO
+                        participants.append(g)
                 break
             inside = s[i + 1 : j].replace(" ", "").strip()
+            inside = remove_format_chars(inside)  # ✅ NUEVO
             if inside:
                 participants.append(inside)
             i = j + 1
@@ -90,11 +115,14 @@ def parse_participants_from_line(line: str):
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
             g = m.group(0)
-            if not g.isspace():
+            # ✅ NUEVO: ignorar clusters invisibles
+            if not is_invisible_cluster(g):
                 participants.append(g)
             i += len(g)
         else:
-            participants.append(ch)
+            # ✅ NUEVO: ignorar Cf en fallback
+            if unicodedata.category(ch) != "Cf" and not ch.isspace():
+                participants.append(ch)
             i += 1
 
     # Quitamos basura mínima
@@ -106,7 +134,8 @@ def extract_round_number(first_line: str):
     """Extrae el número antes del punto: '7. ...' => 7; si no, None."""
     if not first_line:
         return None
-    s = first_line.strip()
+    # ✅ NUEVO: elimina invisibles antes del regex
+    s = remove_format_chars(first_line).strip()
     m = re.match(r"^\s*(\d+)\s*\.", s)
     if not m:
         return None
@@ -123,6 +152,9 @@ def normalize_lines(raw_text: str):
       - first_two: (line1, line2) (pueden ser "" si faltan)
     """
     raw = raw_text or ""
+    # ✅ NUEVO: limpia invisibles a nivel texto completo (por si están al inicio de línea)
+    raw = remove_format_chars(raw)
+
     lines_all = [ln.strip() for ln in raw.splitlines() if ln.strip() != ""]
     line1 = lines_all[0] if len(lines_all) >= 1 else ""
     line2 = lines_all[1] if len(lines_all) >= 2 else ""
