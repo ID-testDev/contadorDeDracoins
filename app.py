@@ -47,6 +47,28 @@ def graphemes(s: str):
     return list(s)
 
 
+# ✅ NUEVO: invisibles típicos de copypaste (WhatsApp, etc.)
+# OJO: NO incluimos ZWJ (U+200D) ni VS16 (U+FE0F) porque rompen emojis compuestos.
+INVISIBLE_CODEPOINTS = {
+    0x2060,  # WORD JOINER (el que normalmente ves como "⁠")
+    0x200B,  # ZERO WIDTH SPACE
+    0xFEFF,  # ZERO WIDTH NO-BREAK SPACE / BOM
+    0x200E,  # LRM
+    0x200F,  # RLM
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embedding/override
+}
+
+
+def normalize_participant(token: str) -> str:
+    """
+    Quita invisibles basura sin tocar ZWJ (U+200D) ni VS16 (U+FE0F),
+    necesarios para emojis compuestos como 🤹‍♂️, 🧘🏻‍♂️, etc.
+    """
+    if not token:
+        return token
+    return "".join(ch for ch in token if ord(ch) not in INVISIBLE_CODEPOINTS)
+
+
 def is_invisible_cluster(g: str) -> bool:
     """
     True solo si el cluster NO contiene ningún caracter visible.
@@ -101,11 +123,13 @@ def parse_participants_from_line(line: str):
                 # Paréntesis sin cerrar: no tronamos, parseamos lo que quede como clusters
                 rest = s[i:].replace(" ", "")
                 for g in graphemes(rest):
-                    if not is_invisible_cluster(g):
+                    g = normalize_participant(g)  # ✅ NUEVO
+                    if g and not is_invisible_cluster(g):
                         participants.append(g)
                 break
 
             inside = s[i + 1 : j].replace(" ", "").strip()
+            inside = normalize_participant(inside)  # ✅ NUEVO
             if inside and not is_invisible_cluster(inside):
                 participants.append(inside)
 
@@ -116,15 +140,21 @@ def parse_participants_from_line(line: str):
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
             g = m.group(0)
-            if not is_invisible_cluster(g):
+            g = normalize_participant(g)  # ✅ NUEVO
+            if g and not is_invisible_cluster(g):
                 participants.append(g)
-            i += len(g)
+            i += len(m.group(0))
         else:
             # Fallback por codepoint: ignoramos chars invisibles (Cf/controles/espacios)
             cat = unicodedata.category(ch)
             if not ch.isspace() and not cat.startswith(("C", "Z")):
-                participants.append(ch)
+                ch_norm = normalize_participant(ch)  # ✅ NUEVO
+                if ch_norm:
+                    participants.append(ch_norm)
             i += 1
+
+    # ✅ NUEVO: normalizamos todo al final por si se coló un invisible en grupo
+    participants = [normalize_participant(p) for p in participants]
 
     # Quitamos basura mínima
     participants = [p for p in participants if p and p != "."]
@@ -152,6 +182,10 @@ def normalize_lines(raw_text: str):
       - first_two: (line1, line2) (pueden ser "" si faltan)
     """
     raw = raw_text or ""
+
+    # ✅ NUEVO: limpiamos invisibles basura a nivel texto (sin tocar ZWJ/VS16)
+    raw = normalize_participant(raw)
+
     lines_all = [ln.strip() for ln in raw.splitlines() if ln.strip() != ""]
     line1 = lines_all[0] if len(lines_all) >= 1 else ""
     line2 = lines_all[1] if len(lines_all) >= 2 else ""
