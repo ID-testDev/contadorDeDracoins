@@ -264,6 +264,9 @@ with col_btn2:
         st.session_state.analizado = False
         st.session_state.raw_analizado = ""
         st.session_state.texto_dinamica = ""
+        # Eliminar la key del widget para forzar que Streamlit lo recree vacío
+        if "textarea_dinamica" in st.session_state:
+            del st.session_state["textarea_dinamica"]
         st.rerun()
 
 if not st.session_state.analizado:
