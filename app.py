@@ -12,10 +12,35 @@ except Exception:
 
 
 st.set_page_config(page_title="Contador de Dracoins", layout="centered")
+
+st.markdown("""
+<style>
+/* Botón primary */
+div.stButton > button[kind="primary"] {
+    background-color: #3B82F6 !important;
+    border-color: #3B82F6 !important;
+    color: white !important;
+}
+div.stButton > button[kind="primary"]:hover {
+    background-color: #2563EB !important;
+    border-color: #2563EB !important;
+}
+div.stButton > button[kind="primary"]:active {
+    background-color: #1D4ED8 !important;
+    border-color: #1D4ED8 !important;
+}
+/* Borde del text_area y inputs al hacer foco */
+textarea:focus, input:focus {
+    border-color: #3B82F6 !important;
+    box-shadow: 0 0 0 1px #3B82F6 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("🪙 Contador de Dracoins")
 
-st.markdown("### Formato de entrada")
-st.code(
+with st.expander("📋 Ver formato de entrada", expanded=False):
+    st.code(
 """Dinámica Ejemplo          <- nombre (opcional)
 
 1. 🥇🥈🥉🏅
@@ -31,10 +56,10 @@ st.code(
 
 - Primera línea de cada ronda: top 4
 - Segunda línea: todos los demás
-- Tercera línea (opcional): > DOBLES o > TRIPLES
+- Líneas con > : notas del admin (DOBLES, TRIPLES, x2, x3, *2, *3)
 - Paréntesis = ese conjunto es 1 solo participante""",
-    language="text"
-)
+        language="text"
+    )
 
 st.divider()
 
@@ -345,16 +370,23 @@ if st.button("🧮 Contar dinámica", type="primary"):
         for p, pts in scores.items():
             total_global[p] += pts
 
+        # Advertencia top 4 con más de 4 participantes reales
+        if len(top4_list) > 4:
+            st.warning(
+                f"Ronda {r}: Se detectaron **{len(top4_list)} participantes** en el top 4 "
+                f"(se esperaban máximo 4). Se tomaron solo los primeros 4."
+            )
+
         sorted_round = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
         mult_label = {1: "x1 Normal", 2: "x2 Doble", 3: "x3 Triple"}[multiplier]
 
-        st.markdown(f"### Ronda {r} — {mult_label}")
-        if not sorted_round:
-            st.info("Sin participantes detectados.")
-        else:
-            lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_round])
-            st.code(lines_out, language="text")
-            st.components.v1.html(copy_button_html(lines_out, f"btn_r{r}"), height=45)
+        with st.expander(f"Ronda {r} — {mult_label}", expanded=False):
+            if not sorted_round:
+                st.info("Sin participantes detectados.")
+            else:
+                lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_round])
+                st.code(lines_out, language="text")
+                st.components.v1.html(copy_button_html(lines_out, f"btn_r{r}"), height=45)
 
     st.divider()
     st.markdown("## Total de toda la dinámica")
