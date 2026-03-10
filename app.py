@@ -16,96 +16,83 @@ st.set_page_config(page_title="Contador de Dracoins", layout="centered")
 
 st.title("🪙 Contador de Dracoins")
 
-st.markdown("### Formato de entrada (ejemplo)")
+st.markdown("### Formato de entrada")
 st.code(
-"""7. 🐽🐝(🐶🐭)🕷
-(👑🐺)🥋🪅(🎈🪼)(⭐🌸)(💫🐥)
+"""Dinámica Ejemplo          ← nombre (opcional, si la 1ra línea no empieza con número)
 
-- En la **primera línea** van los **primeros 4 lugares** (1°, 2°, 3°, 4°).
-- En la **segunda línea** van **todos los demás**.
-- **Paréntesis** = ese conjunto de emojis es **1 solo participante**.
-- Sin paréntesis = **cada emoji** es **1 participante**.""",
+1. 🥇🥈🥉🏅
+🎖️(🏵️🎗️)🐾🌸
+
+2. 🐽🐝(🐶🐭)🕷
+(👑🐺)🥋🪅(🎈🪼)
+> DOBLES
+
+3. 🥥☣️🦄🐞
+🐱🐼🧟‍♂️🌹🍧
+> TRIPLES
+
+- Primera línea de cada ronda: top 4 (1°, 2°, 3°, 4°)
+- Segunda línea: todos los demás
+- Líneas con '>' son notas del admin (se usan para detectar DOBLES/TRIPLES, luego se ignoran)
+- Paréntesis = ese conjunto es 1 solo participante""",
     language="text"
 )
 
 st.divider()
 
-nombre = st.text_input("Nombre de la dinámica", placeholder="Ej. Dinámica Otaku")
-num_rondas = st.number_input("¿Cuántas rondas hubo?", min_value=1, max_value=100, value=1, step=1)
-
+# ─────────────────────────────────────────────
+# Constantes de puntos
+# ─────────────────────────────────────────────
 PUNTOS_TOP4 = [30, 25, 20, 15]
 PUNTOS_OTROS = 10
 
-
-def graphemes(s: str):
-    """Devuelve clusters (mejor para emojis compuestos)."""
-    if not s:
-        return []
-    if HAS_REGEX:
-        return re.findall(r"\X", s)
-    # Fallback: por codepoint (puede partir algunos emojis compuestos)
-    return list(s)
-
-
-# ✅ NUEVO: invisibles típicos de copypaste (WhatsApp, etc.)
-# OJO: NO incluimos ZWJ (U+200D) ni VS16 (U+FE0F) porque rompen emojis compuestos.
+# ─────────────────────────────────────────────
+# Invisibles a limpiar (sin tocar ZWJ ni VS16)
+# ─────────────────────────────────────────────
 INVISIBLE_CODEPOINTS = {
-    0x2060,  # WORD JOINER (el que normalmente ves como "⁠")
+    0x2060,  # WORD JOINER
     0x200B,  # ZERO WIDTH SPACE
-    0xFEFF,  # ZERO WIDTH NO-BREAK SPACE / BOM
+    0xFEFF,  # BOM
     0x200E,  # LRM
     0x200F,  # RLM
-    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,  # bidi embedding/override
+    0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
 }
 
 
 def normalize_participant(token: str) -> str:
-    """
-    Quita invisibles basura sin tocar ZWJ (U+200D) ni VS16 (U+FE0F),
-    necesarios para emojis compuestos como 🤹‍♂️, 🧘🏻‍♂️, etc.
-    """
     if not token:
         return token
     return "".join(ch for ch in token if ord(ch) not in INVISIBLE_CODEPOINTS)
 
 
 def is_invisible_cluster(g: str) -> bool:
-    """
-    True solo si el cluster NO contiene ningún caracter visible.
-    Esto permite ignorar basura invisible (word joiner, etc.)
-    sin romper emojis compuestos que usan Cf (ZWJ/VS16).
-    """
     if not g:
         return True
-
     for ch in g:
         cat = unicodedata.category(ch)
-
-        # Si hay algo visible (letra, número, símbolo, puntuación) => NO es invisible
-        # (Los emojis suelen caer en categoría "S*")
         if cat.startswith(("L", "N", "S", "P")):
             return False
-
-    # Si solo trae control/format/separators (incluye Cf) => invisible
     return True
 
 
+def graphemes(s: str):
+    if not s:
+        return []
+    if HAS_REGEX:
+        return re.findall(r"\X", s)
+    return list(s)
+
+
 def parse_participants_from_line(line: str):
-    """
-    Parsea una línea de emojis con reglas:
-    - (🐶🐭) => 1 participante "🐶🐭"
-    - 🐽🐝🕷 => cada emoji = 1 participante
-    - También soporta grupos pegados: (🎈🪼)(⭐🌸)
-    """
     if not line:
         return []
 
     s = line.strip()
 
-    # Si trae "N." al inicio, recortamos a la derecha del punto
-    if "." in s:
-        left, right = s.split(".", 1)
-        s = right.strip()
+    # Quitar "N." al inicio
+    if re.match(r"^\s*\d+\s*\.", s):
+        _, s = s.split(".", 1)
+        s = s.strip()
 
     participants = []
     i = 0
@@ -116,198 +103,319 @@ def parse_participants_from_line(line: str):
             i += 1
             continue
 
-        # Grupo entre paréntesis
         if ch == "(":
             j = s.find(")", i + 1)
             if j == -1:
-                # Paréntesis sin cerrar: no tronamos, parseamos lo que quede como clusters
                 rest = s[i:].replace(" ", "")
                 for g in graphemes(rest):
-                    g = normalize_participant(g)  # ✅ NUEVO
+                    g = normalize_participant(g)
                     if g and not is_invisible_cluster(g):
                         participants.append(g)
                 break
-
-            inside = s[i + 1 : j].replace(" ", "").strip()
-            inside = normalize_participant(inside)  # ✅ NUEVO
+            inside = s[i + 1: j].replace(" ", "").strip()
+            inside = normalize_participant(inside)
             if inside and not is_invisible_cluster(inside):
                 participants.append(inside)
-
             i = j + 1
             continue
 
-        # No paréntesis: 1 cluster = 1 participante
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
-            g = m.group(0)
-            g = normalize_participant(g)  # ✅ NUEVO
+            g = normalize_participant(m.group(0))
             if g and not is_invisible_cluster(g):
                 participants.append(g)
             i += len(m.group(0))
         else:
-            # Fallback por codepoint: ignoramos chars invisibles (Cf/controles/espacios)
             cat = unicodedata.category(ch)
             if not ch.isspace() and not cat.startswith(("C", "Z")):
-                ch_norm = normalize_participant(ch)  # ✅ NUEVO
+                ch_norm = normalize_participant(ch)
                 if ch_norm:
                     participants.append(ch_norm)
             i += 1
 
-    # ✅ NUEVO: normalizamos todo al final por si se coló un invisible en grupo
     participants = [normalize_participant(p) for p in participants]
-
-    # Quitamos basura mínima
     participants = [p for p in participants if p and p != "."]
     return participants
 
 
-def extract_round_number(first_line: str):
-    """Extrae el número antes del punto: '7. ...' => 7; si no, None."""
-    if not first_line:
-        return None
-    s = first_line.strip()
-    m = re.match(r"^\s*(\d+)\s*\.", s)
-    if not m:
-        return None
-    try:
-        return int(m.group(1))
-    except Exception:
-        return None
+def detect_multiplier_from_text(text: str) -> int:
+    """Detecta si el texto menciona DOBLES o TRIPLES."""
+    t = text.upper()
+    if "TRIPLE" in t:
+        return 3
+    if "DOBLE" in t:
+        return 2
+    return 1
 
 
-def normalize_lines(raw_text: str):
+def is_round_start_line(line: str) -> bool:
+    """True si la línea empieza con 'N.' (inicio de ronda)."""
+    return bool(re.match(r"^\s*\d+\s*[\.\-\)]\s*", line))
+
+
+def is_meta_line(line: str) -> bool:
     """
-    Devuelve:
-      - lines_all: líneas no vacías (strip) en orden
-      - first_two: (line1, line2) (pueden ser "" si faltan)
+    True si la línea es una anotación/nota del admin.
+    Empieza con '>', '-', '*', '•' o contiene palabras clave.
     """
-    raw = raw_text or ""
+    s = line.strip()
+    if s.startswith((">", "-", "*", "•")):
+        return True
+    upper = s.upper()
+    if any(kw in upper for kw in ["DOBLE", "TRIPLE", "NORMAL"]):
+        return True
+    return False
 
-    # ✅ NUEVO: limpiamos invisibles basura a nivel texto (sin tocar ZWJ/VS16)
-    raw = normalize_participant(raw)
 
-    lines_all = [ln.strip() for ln in raw.splitlines() if ln.strip() != ""]
-    line1 = lines_all[0] if len(lines_all) >= 1 else ""
-    line2 = lines_all[1] if len(lines_all) >= 2 else ""
-    return lines_all, (line1, line2)
+# ─────────────────────────────────────────────
+# Parser principal: texto completo → rondas
+# ─────────────────────────────────────────────
+def parse_full_input(raw: str):
+    """
+    Parsea el bloque completo de texto y devuelve:
+      - nombre: str
+      - rondas: list of dict
+      - warnings_global: list of str (advertencias de estructura global)
+    """
+    raw = normalize_participant(raw or "")
+    non_empty = [ln.strip() for ln in raw.splitlines() if ln.strip()]
+
+    if not non_empty:
+        return "", [], []
+
+    # ¿Primera línea es nombre?
+    nombre = ""
+    start_idx = 0
+    if non_empty and not is_round_start_line(non_empty[0]):
+        nombre = non_empty[0]
+        start_idx = 1
+
+    # Agrupar en bloques por inicio de ronda
+    blocks = []
+    current_block = None
+
+    for line in non_empty[start_idx:]:
+        if is_round_start_line(line):
+            if current_block is not None:
+                blocks.append(current_block)
+            current_block = [line]
+        else:
+            if current_block is None:
+                continue
+            current_block.append(line)
+
+    if current_block is not None:
+        blocks.append(current_block)
+
+    rondas = []
+    for block in blocks:
+        if not block:
+            continue
+
+        line1 = block[0]
+        line2 = ""
+        mult_auto = 1
+
+        rest = block[1:]
+        emoji_lines = []
+
+        for ln in rest:
+            # Primero revisar multiplicador en TODAS las líneas (incluyendo meta)
+            m = detect_multiplier_from_text(ln)
+            if m > 1:
+                mult_auto = m
+
+            # Solo agregar a emoji_lines si NO es meta
+            if not is_meta_line(ln):
+                emoji_lines.append(ln)
+
+        if emoji_lines:
+            line2 = emoji_lines[0]
+            # líneas de emojis adicionales se ignoran (raro, pero posible)
+
+        m_num = re.match(r"^\s*(\d+)\s*[\.\-\)]", line1)
+        num = int(m_num.group(1)) if m_num else len(rondas) + 1
+
+        rondas.append({
+            "num": num,
+            "line1": line1,
+            "line2": line2,
+            "mult_auto": mult_auto,
+        })
+
+    # ── Advertencias globales de correlatividad ──
+    warnings_global = []
+    nums = [r["num"] for r in rondas]
+
+    if nums:
+        # Escenario A: saltos en la secuencia
+        expected = list(range(nums[0], nums[0] + len(nums)))
+        for exp, got in zip(expected, nums):
+            if exp != got:
+                # Hay un salto — detectar cuáles faltan
+                break
+        missing = sorted(set(expected) - set(nums))
+        if missing:
+            faltantes = ", ".join(str(n) for n in missing)
+            warnings_global.append(f"⚠️ Parece que falta(n) la(s) ronda(s): **{faltantes}**. Verifica que pegaste el mensaje completo.")
+
+        # Escenario B: número incorrecto según posición
+        for pos, ronda in enumerate(rondas, start=nums[0]):
+            if ronda["num"] != pos:
+                warnings_global.append(
+                    f"⚠️ La ronda en posición {pos} está numerada como **{ronda['num']}** en el texto."
+                )
+
+    return nombre, rondas, warnings_global
 
 
 def compute_round_scores(line1: str, line2: str, multiplier: int):
     top4 = parse_participants_from_line(line1)
-    others = parse_participants_from_line(line2)
+    others_raw = parse_participants_from_line(line2)
+
+    # ✅ Ignorar en "otros" a quienes ya están en top 4
+    top4_set = set(top4[:4])
+    others = [p for p in others_raw if p not in top4_set]
+    ignored = [p for p in others_raw if p in top4_set]
 
     scores = defaultdict(int)
-
-    # Top 4 (solo primeros 4)
     for idx, participant in enumerate(top4[:4]):
         scores[participant] += PUNTOS_TOP4[idx] * multiplier
-
-    # Otros (todos en 2da línea)
     for participant in others:
         scores[participant] += PUNTOS_OTROS * multiplier
 
-    return dict(scores), top4, others
+    return dict(scores), top4, others, ignored
 
 
-# Guardamos inputs por ronda
-round_inputs = []
-round_multipliers = []
+# ─────────────────────────────────────────────
+# UI
+# ─────────────────────────────────────────────
 
-st.markdown("### Captura por rondas")
+raw_input = st.text_area(
+    "Pega aquí el mensaje completo de la dinámica",
+    height=300,
+    placeholder="Dinámica Ejemplo\n1. 🥇🥈🥉🏅\n🎖️🐾🌸\n2. 🐽🐝🕷\n🥋🪅\n> DOBLES",
+)
 
-for r in range(1, int(num_rondas) + 1):
-    st.subheader(f"Ronda {r}")
+nombre_detectado, rondas_detectadas, warnings_global = parse_full_input(raw_input)
 
-    colA, colB = st.columns([2, 1])
-    with colB:
-        mult_label = st.radio(
-            "Tipo de ronda",
-            options=["Normal", "Doble", "Triple"],
-            index=0,
-            key=f"mult_{r}",
-            horizontal=False
-        )
-        multiplier = 1 if mult_label == "Normal" else (2 if mult_label == "Doble" else 3)
-
-    with colA:
-        raw = st.text_area(
-            "Pega aquí la ronda (2 líneas)",
-            height=110,
-            placeholder=f"""{r}. 🥇🥈🥉🏅
-🎖️(🏵️🎗️)""",
-            key=f"txt_{r}",
-        )
-
-    round_inputs.append(raw)
-    round_multipliers.append(multiplier)
-
-st.divider()
-
-if st.button("Contar dinámica", type="primary"):
-    if not nombre.strip():
-        st.error("Ponle un nombre a la dinámica.")
-        st.stop()
-
-    total_global = defaultdict(int)
-
-    st.markdown(f"## Resultados — **{nombre.strip()}**")
-
-    for r in range(1, int(num_rondas) + 1):
-        raw = round_inputs[r - 1]
-        multiplier = round_multipliers[r - 1]
-
-        lines_all, (line1, line2) = normalize_lines(raw)
-
-        # ✅ Validación: exactamente 2 líneas
-        if len(lines_all) != 2:
-            if len(lines_all) == 0:
-                st.warning(f"Ronda {r}: No hay contenido.")
-            elif len(lines_all) == 1:
-                st.warning(f"Ronda {r}: Solo hay **1 línea**. Deben ser **2 líneas** (top 4 y otros).")
-            else:
-                st.warning(
-                    f"Ronda {r}: Hay **{len(lines_all)} líneas**. Deben ser **2 líneas**. "
-                    f"Voy a usar **solo las primeras 2** para contar."
-                )
-
-        # Validación del número de ronda (se revisa en la 1ra línea)
-        detected = extract_round_number(line1)
-        if detected is None:
-            st.warning(f"Ronda {r}: No encontré el número al inicio (ej. `{r}. ...`).")
-        elif detected != r:
-            st.warning(f"Ronda {r}: El número escrito es `{detected}.` pero debería ser `{r}.`.")
-
-        # Conteo
-        scores, top4_list, others_list = compute_round_scores(line1, line2, multiplier)
-
-        # ✅ Duplicados (considerando ambas líneas)
-        all_participants = top4_list + others_list
-        counts = Counter(all_participants)
-        duplicates = [p for p, c in counts.items() if c > 1]
-        if duplicates:
-            dup_text = ", ".join(duplicates)
-            st.warning(f"Ronda {r}: Participantes repetidos detectados (se contaron tal cual aparecen): {dup_text}")
-
-        # Sumamos al total global
-        for p, pts in scores.items():
-            total_global[p] += pts
-
-        # Orden por puntos desc, luego por nombre
-        sorted_round = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
-
-        st.markdown(f"### Total Ronda {r} (x{multiplier})")
-        if not sorted_round:
-            st.info("Sin participantes detectados en esta ronda.")
-        else:
-            lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_round])
-            st.code(lines_out, language="text")
-
+if raw_input.strip():
     st.divider()
+    st.markdown("### Vista previa y ajustes")
 
-    st.markdown("## Total de toda la dinámica")
-    sorted_total = sorted(total_global.items(), key=lambda x: (-x[1], x[0]))
-    if not sorted_total:
-        st.info("No se detectaron participantes en ninguna ronda.")
+    # Advertencias globales
+    for w in warnings_global:
+        st.warning(w)
+
+    # Nombre
+    col_n1, col_n2 = st.columns([1, 2])
+    with col_n1:
+        st.markdown("**Nombre detectado:**")
+    with col_n2:
+        nombre_final = st.text_input(
+            "Nombre de la dinámica",
+            value=nombre_detectado,
+            label_visibility="collapsed",
+            placeholder="Sin nombre detectado",
+        )
+
+    if not rondas_detectadas:
+        st.warning("No se detectaron rondas. Verifica el formato.")
     else:
-        lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_total])
-        st.code(lines_out, language="text")
+        st.markdown(f"**Rondas detectadas:** {len(rondas_detectadas)}")
+
+        mult_overrides = {}
+
+        for ronda in rondas_detectadas:
+            r = ronda["num"]
+            mult_auto = ronda["mult_auto"]
+            auto_label = {1: "Normal", 2: "Doble", 3: "Triple"}[mult_auto]
+
+            # Advertencia top 4 incompleto (preview)
+            top4_preview = parse_participants_from_line(ronda["line1"])
+            top4_count = len(top4_preview[:4])
+
+            label_expander = f"Ronda {r} — {auto_label}"
+            if top4_count < 4:
+                label_expander += f" ⚠️ top {top4_count}/4"
+
+            with st.expander(label_expander, expanded=False):
+                st.caption(f"Línea top 4: `{ronda['line1']}`")
+                st.caption(f"Línea otros: `{ronda['line2']}`" if ronda['line2'] else "Línea otros: *(vacía)*")
+
+                options = ["Normal", "Doble", "Triple"]
+                default_idx = options.index(auto_label)
+                override = st.radio(
+                    f"Multiplicador ronda {r}",
+                    options=options,
+                    index=default_idx,
+                    key=f"mult_override_{r}",
+                    horizontal=True,
+                )
+                mult_overrides[r] = 1 if override == "Normal" else (2 if override == "Doble" else 3)
+
+        st.divider()
+
+        if st.button("Contar dinámica", type="primary"):
+            nombre_uso = nombre_final.strip() or "Sin nombre"
+            total_global = defaultdict(int)
+
+            st.markdown(f"## Resultados — **{nombre_uso}**")
+
+            for ronda in rondas_detectadas:
+                r = ronda["num"]
+                multiplier = mult_overrides.get(r, ronda["mult_auto"])
+                line1 = ronda["line1"]
+                line2 = ronda["line2"]
+
+                if not line2:
+                    st.warning(f"Ronda {r}: No se detectó la segunda línea.")
+
+                scores, top4_list, others_list, ignored_list = compute_round_scores(line1, line2, multiplier)
+
+                # Advertencia top 4 incompleto
+                if len(top4_list) < 4:
+                    st.warning(
+                        f"Ronda {r}: Solo se detectaron **{len(top4_list)}** participante(s) en el top 4 "
+                        f"(se esperaban 4). Se asignaron puntos a los que hay."
+                    )
+
+                # Advertencia ignorados en "otros"
+                if ignored_list:
+                    st.info(
+                        f"Ronda {r}: {', '.join(ignored_list)} aparecen en top 4 y en 'otros' — "
+                        f"se ignoraron en la segunda línea."
+                    )
+
+                # Duplicados dentro de la misma línea
+                all_participants = top4_list + others_list
+                counts = Counter(all_participants)
+                duplicates = [p for p, c in counts.items() if c > 1]
+                if duplicates:
+                    st.warning(
+                        f"Ronda {r}: Participantes repetidos en la misma línea: "
+                        + ", ".join(duplicates)
+                    )
+
+                for p, pts in scores.items():
+                    total_global[p] += pts
+
+                sorted_round = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
+                mult_label = {1: "x1 Normal", 2: "x2 Doble", 3: "x3 Triple"}[multiplier]
+
+                st.markdown(f"### Ronda {r} — {mult_label}")
+                if not sorted_round:
+                    st.info("Sin participantes detectados.")
+                else:
+                    lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_round])
+                    st.code(lines_out, language="text")
+
+            st.divider()
+            st.markdown("## Total de toda la dinámica")
+            sorted_total = sorted(total_global.items(), key=lambda x: (-x[1], x[0]))
+
+            if not sorted_total:
+                st.info("No se detectaron participantes en ninguna ronda.")
+            else:
+                lines_out = "\n".join([f"{p} {pts}" for p, pts in sorted_total])
+                st.code(lines_out, language="text")
