@@ -118,9 +118,9 @@ def parse_participants_from_line(line):
 
 def detect_multiplier(text):
     t = text.upper()
-    if "TRIPLE" in t:
+    if any(k in t for k in ["TRIPLE", "TRIPLES", "X3", "*3"]):
         return 3
-    if "DOBLE" in t:
+    if any(k in t for k in ["DOBLE", "DOBLES", "X2", "*2"]):
         return 2
     return 1
 
