@@ -236,38 +236,23 @@ if "analizado" not in st.session_state:
     st.session_state.analizado = False
 if "raw_analizado" not in st.session_state:
     st.session_state.raw_analizado = ""
-if "texto_dinamica" not in st.session_state:
-    st.session_state.texto_dinamica = ""
 
 raw_input = st.text_area(
     "Pega aquí el mensaje completo de la dinámica",
     height=300,
     placeholder="Dinámica Ejemplo\n1. 🥇🥈🥉🏅\n🎖️🐾🌸\n2. 🐽🐝🕷\n🥋🪅\n> DOBLES",
-    value=st.session_state.texto_dinamica,
-    key="textarea_dinamica",
 )
-
-# Sincronizar con session_state
-st.session_state.texto_dinamica = raw_input
 
 # Si el texto cambia, resetear el estado analizado
 if raw_input != st.session_state.raw_analizado:
     st.session_state.analizado = False
 
-col_btn1, col_btn2 = st.columns([2, 1])
-with col_btn1:
-    if st.button("🔍 Analizar dinámica", disabled=not raw_input.strip(), use_container_width=True):
-        st.session_state.analizado = True
-        st.session_state.raw_analizado = raw_input
-with col_btn2:
-    if st.button("🗑️ Limpiar", use_container_width=True, disabled=not raw_input.strip()):
-        st.session_state.analizado = False
-        st.session_state.raw_analizado = ""
-        st.session_state.texto_dinamica = ""
-        # Eliminar la key del widget para forzar que Streamlit lo recree vacío
-        if "textarea_dinamica" in st.session_state:
-            del st.session_state["textarea_dinamica"]
-        st.rerun()
+if st.button("🔍 Analizar dinámica", type="primary", use_container_width=True):
+    if not raw_input.strip():
+        st.warning("Pega el mensaje de la dinámica antes de analizar.")
+        st.stop()
+    st.session_state.analizado = True
+    st.session_state.raw_analizado = raw_input
 
 if not st.session_state.analizado:
     st.stop()
