@@ -100,9 +100,9 @@ def parse_participants_from_line(line):
     if not line:
         return []
     s = line.strip()
-    if re.match(r"^\s*\d+\s*\.", s):
-        _, s = s.split(".", 1)
-        s = s.strip()
+    m_prefix = re.match(r"^\s*\d+\s*[\.\-\)]\s*", s)
+    if m_prefix:
+        s = s[m_prefix.end():].strip()
     participants = []
     i = 0
     while i < len(s):
@@ -156,7 +156,9 @@ def is_round_start_line(line):
 
 def is_meta_line(line):
     s = line.strip()
-    if s.startswith((">", "-", "*", "•")):
+    if s.startswith(">") or s.startswith("*") or s.startswith("•"):
+        return True
+    if s.startswith("-") and not re.match(r"^\d+\s*-", s):
         return True
     upper = s.upper()
     return any(kw in upper for kw in ["DOBLE", "TRIPLE", "NORMAL"])
