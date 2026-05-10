@@ -1,4 +1,9 @@
 # app.py
+
+# ── VERSIÓN ──────────────────────────────────────────────────────────────────
+ULTIMA_ACTUALIZACION = "10 de mayo de 2026"
+# ─────────────────────────────────────────────────────────────────────────────
+
 import streamlit as st
 from collections import defaultdict, Counter
 import unicodedata
@@ -38,6 +43,8 @@ textarea:focus, input:focus {
 """, unsafe_allow_html=True)
 
 st.title("🪙 Contador de Dracoins")
+
+st.caption(f"🕒 Última actualización: {ULTIMA_ACTUALIZACION}")
 
 with st.expander("📋 Ver formato de entrada", expanded=False):
     st.code(
