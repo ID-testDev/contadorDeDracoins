@@ -78,12 +78,27 @@ def normalize_participant(token):
     return "".join(ch for ch in token if ord(ch) not in INVISIBLE_CODEPOINTS)
 
 
+def is_emoji_codepoint(cp):
+    """Codepoints en bloques emoji conocidos, incluyendo Unicode 15 y 16."""
+    return (
+        0x1F300 <= cp <= 0x1FAFF  # bloques emoji principales
+        or 0x2600 <= cp <= 0x27BF  # símbolos misceláneos
+        or 0x1F000 <= cp <= 0x1F02F  # mahjong
+        or 0x1F0A0 <= cp <= 0x1F0FF  # cartas
+        or 0x1CC00 <= cp <= 0x1CEBF  # Unicode 16.0 nuevo bloque
+        or 0xFE00 <= cp <= 0xFE0F    # variation selectors
+    )
+
+
 def is_invisible_cluster(g):
     if not g:
         return True
     for ch in g:
+        cp = ord(ch)
         cat = unicodedata.category(ch)
         if cat.startswith(("L", "N", "S", "P")):
+            return False
+        if is_emoji_codepoint(cp):  # salvaguarda para emojis Unicode 15/16
             return False
     return True
 
