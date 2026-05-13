@@ -1,9 +1,4 @@
 # app.py
-
-# ── VERSIÓN ──────────────────────────────────────────────────────────────────
-ULTIMA_ACTUALIZACION = "10 de mayo de 2026"
-# ─────────────────────────────────────────────────────────────────────────────
-
 import streamlit as st
 from collections import defaultdict, Counter
 import unicodedata
@@ -44,8 +39,6 @@ textarea:focus, input:focus {
 
 st.title("🪙 Contador de Dracoins")
 
-st.caption(f"🕒 Última actualización: {ULTIMA_ACTUALIZACION}")
-
 with st.expander("📋 Ver formato de entrada", expanded=False):
     st.code(
 """Dinámica Ejemplo          <- nombre (opcional)
@@ -73,6 +66,19 @@ st.divider()
 PUNTOS_TOP4 = [30, 25, 20, 15]
 PUNTOS_OTROS = 10
 
+SUPERSCRIPT_DIGITS = str.maketrans("⁰¹²³⁴⁵⁶⁷⁸⁹", "0123456789")
+
+# Matches superscript-number prefix like ⁰¹𓍯࣪ ▸ or ⁹⁹𓍯 ▸ ִֶָ
+_SUPER_PREFIX_RE = re.compile(r"^[⁰¹²³⁴⁵⁶⁷⁸⁹]+")
+
+def superscript_round_number(line):
+    """If line starts with superscript digits, return the int round number, else None."""
+    m = _SUPER_PREFIX_RE.match(line.strip())
+    if m:
+        return int(m.group(0).translate(SUPERSCRIPT_DIGITS))
+    return None
+
+
 INVISIBLE_CODEPOINTS = {
     0x2060, 0x200B, 0xFEFF, 0x200E, 0x200F,
     0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
@@ -85,27 +91,14 @@ def normalize_participant(token):
     return "".join(ch for ch in token if ord(ch) not in INVISIBLE_CODEPOINTS)
 
 
-def is_emoji_codepoint(cp):
-    """Codepoints en bloques emoji conocidos, incluyendo Unicode 15 y 16."""
-    return (
-        0x1F300 <= cp <= 0x1FAFF  # bloques emoji principales
-        or 0x2600 <= cp <= 0x27BF  # símbolos misceláneos
-        or 0x1F000 <= cp <= 0x1F02F  # mahjong
-        or 0x1F0A0 <= cp <= 0x1F0FF  # cartas
-        or 0x1CC00 <= cp <= 0x1CEBF  # Unicode 16.0 nuevo bloque
-        or 0xFE00 <= cp <= 0xFE0F    # variation selectors
-    )
-
-
 def is_invisible_cluster(g):
     if not g:
         return True
+    if _is_real_emoji_cluster(g):
+        return False
     for ch in g:
-        cp = ord(ch)
         cat = unicodedata.category(ch)
         if cat.startswith(("L", "N", "S", "P")):
-            return False
-        if is_emoji_codepoint(cp):  # salvaguarda para emojis Unicode 15/16
             return False
     return True
 
@@ -118,13 +111,41 @@ def graphemes(s):
     return list(s)
 
 
+_EMOJI_CP_RE = re.compile(
+    r"[\U0001F300-\U0001FAFF\U00002600-\U000027BF"
+    r"\U0001F1E0-\U0001F1FF\U00002300-\U000023FF\U00002B00-\U00002BFF"
+    r"\U0001FA00-\U0001FFFF]"
+)
+
+
+def _is_real_emoji_cluster(g):
+    return bool(_EMOJI_CP_RE.search(g))
+
+
+def _is_ascii_alphanum_cluster(g):
+    """True si el cluster son solo letras/dígitos ASCII (e.g. 'X', '2')."""
+    return all(c.isascii() and (c.isalpha() or c.isdigit()) for c in g)
+
+
 def parse_participants_from_line(line):
     if not line:
         return []
     s = line.strip()
+    # Quitar prefijo numérico clásico: "1." "1)" "1-"
     m_prefix = re.match(r"^\s*\d+\s*[\.\-\)]\s*", s)
     if m_prefix:
         s = s[m_prefix.end():].strip()
+    else:
+        # Quitar prefijo de superíndices: ⁰¹𓍯 ▸ ִֶָ → avanzar hasta el primer emoji real
+        m_super = _SUPER_PREFIX_RE.match(s)
+        if m_super:
+            clusters = re.findall(r"\X", s) if HAS_REGEX else list(s)
+            first_emoji_idx = next(
+                (i for i, g in enumerate(clusters) if _is_real_emoji_cluster(g)),
+                len(clusters)
+            )
+            s = "".join(clusters[first_emoji_idx:])
+
     participants = []
     i = 0
     while i < len(s):
@@ -138,7 +159,7 @@ def parse_participants_from_line(line):
                 rest = s[i:].replace(" ", "")
                 for g in graphemes(rest):
                     g = normalize_participant(g)
-                    if g and not is_invisible_cluster(g):
+                    if g and not is_invisible_cluster(g) and not _is_ascii_alphanum_cluster(g):
                         participants.append(g)
                 break
             inside = normalize_participant(s[i + 1:j].replace(" ", "").strip())
@@ -149,7 +170,7 @@ def parse_participants_from_line(line):
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
             g = normalize_participant(m.group(0))
-            if g and not is_invisible_cluster(g):
+            if g and not is_invisible_cluster(g) and not _is_ascii_alphanum_cluster(g):
                 participants.append(g)
             i += len(m.group(0))
         else:
@@ -173,7 +194,9 @@ def detect_multiplier(text):
 
 
 def is_round_start_line(line):
-    return bool(re.match(r"^\s*\d+\s*[\.\-\)]\s*", line))
+    if re.match(r"^\s*\d+\s*[\.\-\)]\s*", line):
+        return True
+    return superscript_round_number(line) is not None
 
 
 def is_meta_line(line):
@@ -238,7 +261,11 @@ def parse_full_input(raw):
                 break
 
         m_num = re.match(r"^\s*(\d+)\s*[\.\-\)]", line1)
-        num = int(m_num.group(1)) if m_num else len(rondas) + 1
+        if m_num:
+            num = int(m_num.group(1))
+        else:
+            super_num = superscript_round_number(line1)
+            num = super_num if super_num is not None else len(rondas) + 1
 
         rondas.append({
             "num": num, "line1": line1, "line2": line2,
