@@ -107,7 +107,19 @@ def graphemes(s):
     if not s:
         return []
     if HAS_REGEX:
-        return re.findall(r"\X", s)
+        raw = re.findall(r"\X", s)
+        # Re-join clusters split by ZWJ that regex didn't recognize as a unit
+        # e.g. 🏎‍ (U+1F3CE U+200D) + 🟀 → 🏎‍🟀
+        merged = []
+        i = 0
+        while i < len(raw):
+            g = raw[i]
+            while g.endswith('\u200d') and i + 1 < len(raw):
+                i += 1
+                g = g + raw[i]
+            merged.append(g)
+            i += 1
+        return merged
     return list(s)
 
 
@@ -170,6 +182,12 @@ def parse_participants_from_line(line):
         if HAS_REGEX:
             m = re.match(r"\X", s[i:])
             g = normalize_participant(m.group(0))
+            # Merge with next cluster if this one ends with ZWJ
+            while g.endswith('\u200d') and i + len(m.group(0)) < len(s):
+                i += len(m.group(0))
+                m2 = re.match(r"\X", s[i:])
+                g = g + normalize_participant(m2.group(0))
+                m = m2
             if g and not is_invisible_cluster(g) and not _is_ascii_alphanum_cluster(g):
                 participants.append(g)
             i += len(m.group(0))
